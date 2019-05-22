@@ -38,7 +38,7 @@ public class ClassRef {
     /**
      * Adds the field to the field list.
      */
-    public void addField(FieldRef fref) {
+    void addField(FieldRef fref) {
         mFieldRefs.add(fref);
     }
 
@@ -52,7 +52,7 @@ public class ClassRef {
     /**
      * Adds the method to the method list.
      */
-    public void addMethod(MethodRef mref) {
+    void addMethod(MethodRef mref) {
         mMethodRefs.add(mref);
     }
 
@@ -74,7 +74,7 @@ public class ClassRef {
     /**
      * set internal
      */
-    public void setInternal(boolean internal) {
+    void setInternal(boolean internal) {
         mInternal = internal;
     }
 

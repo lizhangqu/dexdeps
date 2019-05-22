@@ -62,7 +62,7 @@ public class FieldRef {
     /**
      * set internal
      */
-    public void setInternal(boolean internal) {
+    void setInternal(boolean internal) {
         mInternal = internal;
     }
 

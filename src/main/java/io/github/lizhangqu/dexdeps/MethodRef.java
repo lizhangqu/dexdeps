@@ -78,7 +78,7 @@ public class MethodRef {
     /**
      * set internal
      */
-    public void setInternal(boolean internal) {
+    void setInternal(boolean internal) {
         mInternal = internal;
     }
 
