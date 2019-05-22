@@ -1,6 +1,22 @@
 dexdeps
 =======
 
+### Maven
+
+```
+<dependency>
+	<groupId>io.github.lizhangqu</groupId>
+	<artifactId>dexdeps</artifactId>
+	<version>1.0.0</version>
+</dependency>
+```
+
+### Gradle
+
+```
+implementation 'io.github.lizhangqu:dexdeps:1.0.0'
+```
+
 ### Sample
 
 ```
