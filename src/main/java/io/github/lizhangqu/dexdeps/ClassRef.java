@@ -27,11 +27,11 @@ public class ClassRef {
     /**
      * Initializes a new class reference.
      */
-    public ClassRef(String className, boolean isInternal) {
+    public ClassRef(String className, boolean internal) {
         mClassName = className;
         mFieldRefs = new ArrayList<FieldRef>();
         mMethodRefs = new ArrayList<MethodRef>();
-        mInternal = isInternal;
+        mInternal = internal;
 
     }
 
