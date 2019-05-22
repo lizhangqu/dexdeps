@@ -22,14 +22,17 @@ public class ClassRef {
     private String mClassName;
     private ArrayList<FieldRef> mFieldRefs;
     private ArrayList<MethodRef> mMethodRefs;
+    private boolean mInternal;
 
     /**
      * Initializes a new class reference.
      */
-    public ClassRef(String className) {
+    public ClassRef(String className, boolean isInternal) {
         mClassName = className;
         mFieldRefs = new ArrayList<FieldRef>();
         mMethodRefs = new ArrayList<MethodRef>();
+        mInternal = isInternal;
+
     }
 
     /**
@@ -65,5 +68,25 @@ public class ClassRef {
      */
     public String getName() {
         return mClassName;
+    }
+
+
+    /**
+     * set internal
+     */
+    public void setInternal(boolean internal) {
+        mInternal = internal;
+    }
+
+    /**
+     * is internal
+     */
+    public boolean isInternal() {
+        return mInternal;
+    }
+
+    @Override
+    public String toString() {
+        return Utility.descriptorToDot(getName());
     }
 }

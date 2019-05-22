@@ -17,25 +17,34 @@
 package io.github.lizhangqu.dexdeps;
 
 public class MethodRef {
-    private String mDeclClass, mReturnType, mMethodName;
+    private String mDeclaredClass, mReturnType, mMethodName;
     private String[] mArgTypes;
+    private boolean mInternal;
 
     /**
      * Initializes a new field reference.
      */
-    public MethodRef(String declClass, String[] argTypes, String returnType,
-                     String methodName) {
-        mDeclClass = declClass;
+    public MethodRef(String declaredClass, String[] argTypes, String returnType,
+                     String methodName, boolean internal) {
+        mDeclaredClass = declaredClass;
         mArgTypes = argTypes;
         mReturnType = returnType;
         mMethodName = methodName;
+        mInternal = internal;
     }
 
     /**
      * Gets the name of the method's declaring class.
      */
-    public String getDeclClassName() {
-        return mDeclClass;
+    public String getDeclaredClassName() {
+        return mDeclaredClass;
+    }
+
+    /**
+     * Gets the name of the method's declaring class descriptor.
+     */
+    public String getDeclaredClassDescriptorName() {
+        return Utility.descriptorToDot(getDeclaredClassName());
     }
 
     /**
@@ -67,6 +76,20 @@ public class MethodRef {
     }
 
     /**
+     * set internal
+     */
+    public void setInternal(boolean internal) {
+        mInternal = internal;
+    }
+
+    /**
+     * is internal
+     */
+    public boolean isInternal() {
+        return mInternal;
+    }
+
+    /**
      * Returns the method descriptor, given the argument and return type
      * prototype strings.
      */
@@ -84,4 +107,11 @@ public class MethodRef {
 
         return builder.toString();
     }
+
+    @Override
+    public String toString() {
+        return Utility.descriptorToDot(getDeclaredClassName()) +
+                "." + getName() + getDescriptor();
+    }
+
 }

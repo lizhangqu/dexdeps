@@ -16,10 +16,20 @@
 
 package io.github.lizhangqu.dexdeps;
 
+import java.io.EOFException;
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
+import java.util.zip.ZipFile;
 
 /**
  * Data extracted from a DEX file.
@@ -42,6 +52,11 @@ public class DexData {
      */
     public DexData(RandomAccessFile raf) {
         mDexFile = raf;
+        try {
+            load();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -50,7 +65,7 @@ public class DexData {
      * @throws IOException      if we encounter a problem while reading
      * @throws DexDataException if the DEX contents look bad
      */
-    public void load() throws IOException {
+    private void load() throws IOException {
         parseHeaderItem();
 
         loadStrings();
@@ -76,7 +91,7 @@ public class DexData {
     /**
      * Parses the interesting bits out of the header.
      */
-    void parseHeaderItem() throws IOException {
+    private void parseHeaderItem() throws IOException {
         mHeaderItem = new HeaderItem();
 
         seek(0);
@@ -142,7 +157,7 @@ public class DexData {
      * string_data_item.  Doing it this way should allow us to avoid
      * seeking around in the file.
      */
-    void loadStrings() throws IOException {
+    private void loadStrings() throws IOException {
         int count = mHeaderItem.stringIdsSize;
         int stringOffsets[] = new int[count];
 
@@ -166,7 +181,7 @@ public class DexData {
     /**
      * Loads the type ID list.
      */
-    void loadTypeIds() throws IOException {
+    private void loadTypeIds() throws IOException {
         int count = mHeaderItem.typeIdsSize;
         mTypeIds = new TypeIdItem[count];
 
@@ -184,7 +199,7 @@ public class DexData {
     /**
      * Loads the proto ID list.
      */
-    void loadProtoIds() throws IOException {
+    private void loadProtoIds() throws IOException {
         int count = mHeaderItem.protoIdsSize;
         mProtoIds = new ProtoIdItem[count];
 
@@ -230,7 +245,7 @@ public class DexData {
     /**
      * Loads the field ID list.
      */
-    void loadFieldIds() throws IOException {
+    private void loadFieldIds() throws IOException {
         int count = mHeaderItem.fieldIdsSize;
         mFieldIds = new FieldIdItem[count];
 
@@ -250,7 +265,7 @@ public class DexData {
     /**
      * Loads the method ID list.
      */
-    void loadMethodIds() throws IOException {
+    private void loadMethodIds() throws IOException {
         int count = mHeaderItem.methodIdsSize;
         mMethodIds = new MethodIdItem[count];
 
@@ -270,7 +285,7 @@ public class DexData {
     /**
      * Loads the class defs list.
      */
-    void loadClassDefs() throws IOException {
+    private void loadClassDefs() throws IOException {
         int count = mHeaderItem.classDefsSize;
         mClassDefs = new ClassDefItem[count];
 
@@ -304,7 +319,7 @@ public class DexData {
      * Sets the "internal" flag on type IDs which are defined in the
      * DEX file or within the VM (e.g. primitive classes and arrays).
      */
-    void markInternalClasses() {
+    private void markInternalClasses() {
         for (int i = mClassDefs.length - 1; i >= 0; i--) {
             mTypeIds[mClassDefs[i].classIdx].internal = true;
         }
@@ -365,27 +380,31 @@ public class DexData {
 
     /**
      * Returns an array with all of the class references that don't
-     * correspond to classes in the DEX file.  Each class reference has
+     * correspond to classes or corresponds to classes in the DEX file.  Each class reference has
      * a list of the referenced fields and methods associated with
      * that class.
      */
-    public ClassRef[] getExternalReferences() {
+    private ClassRef[] getReferences(boolean internal, boolean external) {
         // create a sparse array of ClassRef that parallels mTypeIds
         ClassRef[] sparseRefs = new ClassRef[mTypeIds.length];
 
         // create entries for all externally-referenced classes
         int count = 0;
         for (int i = 0; i < mTypeIds.length; i++) {
-            if (!mTypeIds[i].internal) {
+            if (mTypeIds[i].internal && internal) {
                 sparseRefs[i] =
-                        new ClassRef(mStrings[mTypeIds[i].descriptorIdx]);
+                        new ClassRef(mStrings[mTypeIds[i].descriptorIdx], true);
+                count++;
+            } else if (!mTypeIds[i].internal && external) {
+                sparseRefs[i] =
+                        new ClassRef(mStrings[mTypeIds[i].descriptorIdx], false);
                 count++;
             }
         }
 
         // add fields and methods to the appropriate class entry
-        addExternalFieldReferences(sparseRefs);
-        addExternalMethodReferences(sparseRefs);
+        addFieldReferences(sparseRefs, internal, external);
+        addMethodReferences(sparseRefs, internal, external);
 
         // crunch out the sparseness
         ClassRef[] classRefs = new ClassRef[count];
@@ -401,35 +420,72 @@ public class DexData {
     }
 
     /**
-     * Runs through the list of field references, inserting external
+     * get all class references
+     */
+    public ClassRef[] getReferences() {
+        return getReferences(true, true);
+    }
+
+    /**
+     * get all class references that don't correspond to classes in the DEX file
+     */
+    public ClassRef[] getExternalReferences() {
+        return getReferences(false, true);
+    }
+
+    /**
+     * get all class references that corresponds to classes in the DEX file
+     */
+    public ClassRef[] getInternalReferences() {
+        return getReferences(true, false);
+    }
+
+
+    /**
+     * Runs through the list of field references, inserting external or internal
      * references into the appropriate ClassRef.
      */
-    private void addExternalFieldReferences(ClassRef[] sparseRefs) {
+    private void addFieldReferences(ClassRef[] sparseRefs, boolean internal, boolean external) {
         for (int i = 0; i < mFieldIds.length; i++) {
-            if (!mTypeIds[mFieldIds[i].classIdx].internal) {
+            if (mTypeIds[mFieldIds[i].classIdx].internal && internal) {
                 FieldIdItem fieldId = mFieldIds[i];
                 FieldRef newFieldRef = new FieldRef(
                         classNameFromTypeIndex(fieldId.classIdx),
                         classNameFromTypeIndex(fieldId.typeIdx),
-                        mStrings[fieldId.nameIdx]);
+                        mStrings[fieldId.nameIdx], true);
+                sparseRefs[mFieldIds[i].classIdx].addField(newFieldRef);
+            } else if (!mTypeIds[mFieldIds[i].classIdx].internal && external) {
+                FieldIdItem fieldId = mFieldIds[i];
+                FieldRef newFieldRef = new FieldRef(
+                        classNameFromTypeIndex(fieldId.classIdx),
+                        classNameFromTypeIndex(fieldId.typeIdx),
+                        mStrings[fieldId.nameIdx], false);
                 sparseRefs[mFieldIds[i].classIdx].addField(newFieldRef);
             }
         }
     }
 
     /**
-     * Runs through the list of method references, inserting external
+     * Runs through the list of method references, inserting external or internal
      * references into the appropriate ClassRef.
      */
-    private void addExternalMethodReferences(ClassRef[] sparseRefs) {
+    private void addMethodReferences(ClassRef[] sparseRefs, boolean internal, boolean external) {
         for (int i = 0; i < mMethodIds.length; i++) {
-            if (!mTypeIds[mMethodIds[i].classIdx].internal) {
+            if (mTypeIds[mMethodIds[i].classIdx].internal && internal) {
                 MethodIdItem methodId = mMethodIds[i];
                 MethodRef newMethodRef = new MethodRef(
                         classNameFromTypeIndex(methodId.classIdx),
                         argArrayFromProtoIndex(methodId.protoIdx),
                         returnTypeFromProtoIndex(methodId.protoIdx),
-                        mStrings[methodId.nameIdx]);
+                        mStrings[methodId.nameIdx], true);
+                sparseRefs[mMethodIds[i].classIdx].addMethod(newMethodRef);
+            } else if (!mTypeIds[mMethodIds[i].classIdx].internal && external) {
+                MethodIdItem methodId = mMethodIds[i];
+                MethodRef newMethodRef = new MethodRef(
+                        classNameFromTypeIndex(methodId.classIdx),
+                        argArrayFromProtoIndex(methodId.protoIdx),
+                        returnTypeFromProtoIndex(methodId.protoIdx),
+                        mStrings[methodId.nameIdx], false);
                 sparseRefs[mMethodIds[i].classIdx].addMethod(newMethodRef);
             }
         }
@@ -445,21 +501,21 @@ public class DexData {
     /**
      * Seeks the DEX file to the specified absolute position.
      */
-    void seek(int position) throws IOException {
+    private void seek(int position) throws IOException {
         mDexFile.seek(position);
     }
 
     /**
      * Fills the buffer by reading bytes from the DEX file.
      */
-    void readBytes(byte[] buffer) throws IOException {
+    private void readBytes(byte[] buffer) throws IOException {
         mDexFile.readFully(buffer);
     }
 
     /**
      * Reads a single signed byte value.
      */
-    byte readByte() throws IOException {
+    private byte readByte() throws IOException {
         mDexFile.readFully(tmpBuf, 0, 1);
         return tmpBuf[0];
     }
@@ -467,7 +523,7 @@ public class DexData {
     /**
      * Reads a signed 16-bit integer, byte-swapping if necessary.
      */
-    short readShort() throws IOException {
+    private short readShort() throws IOException {
         mDexFile.readFully(tmpBuf, 0, 2);
         if (isBigEndian) {
             return (short) ((tmpBuf[1] & 0xff) | ((tmpBuf[0] & 0xff) << 8));
@@ -479,7 +535,7 @@ public class DexData {
     /**
      * Reads a signed 32-bit integer, byte-swapping if necessary.
      */
-    int readInt() throws IOException {
+    private int readInt() throws IOException {
         mDexFile.readFully(tmpBuf, 0, 4);
 
         if (isBigEndian) {
@@ -497,7 +553,7 @@ public class DexData {
      *
      * @throws EOFException if we run off the end of the file
      */
-    int readUnsignedLeb128() throws IOException {
+    private int readUnsignedLeb128() throws IOException {
         int result = 0;
         byte val;
 
@@ -517,7 +573,7 @@ public class DexData {
      * utf16_size and seek back if we get it wrong, but seeking backward
      * may cause the underlying implementation to reload I/O buffers.
      */
-    String readString() throws IOException {
+    private String readString() throws IOException {
         int utf16len = readUnsignedLeb128();
         byte inBuf[] = new byte[utf16len * 3];      // worst case
         int idx;
@@ -542,7 +598,7 @@ public class DexData {
     /**
      * Holds the contents of a header_item.
      */
-    static class HeaderItem {
+    private static class HeaderItem {
         public int fileSize;
         public int headerSize;
         public int endianTag;
@@ -586,7 +642,7 @@ public class DexData {
      * each instead of a simple integer.  (Could use a parallel array, but
      * since this is a desktop app it's not essential.)
      */
-    static class TypeIdItem {
+    private static class TypeIdItem {
         public int descriptorIdx;       // index into string_ids
 
         public boolean internal;        // defined within this DEX file?
@@ -595,7 +651,7 @@ public class DexData {
     /**
      * Holds the contents of a proto_id_item.
      */
-    static class ProtoIdItem {
+    private static class ProtoIdItem {
         public int shortyIdx;           // index into string_ids
         public int returnTypeIdx;       // index into type_ids
         public int parametersOff;       // file offset to a type_list
@@ -606,7 +662,7 @@ public class DexData {
     /**
      * Holds the contents of a field_id_item.
      */
-    static class FieldIdItem {
+    private static class FieldIdItem {
         public int classIdx;            // index into type_ids (defining class)
         public int typeIdx;             // index into type_ids (field type)
         public int nameIdx;             // index into string_ids
@@ -615,7 +671,7 @@ public class DexData {
     /**
      * Holds the contents of a method_id_item.
      */
-    static class MethodIdItem {
+    private static class MethodIdItem {
         public int classIdx;            // index into type_ids
         public int protoIdx;            // index into proto_ids
         public int nameIdx;             // index into string_ids
@@ -627,7 +683,138 @@ public class DexData {
      * We don't really need a class for this, but there's some stuff in
      * the class_def_item that we might want later.
      */
-    static class ClassDefItem {
+    private static class ClassDefItem {
         public int classIdx;            // index into type_ids
+    }
+
+    /**
+     * create DexData
+     */
+    public static List<DexData> open(File file) {
+        if (file == null || !file.exists() || !file.isFile()) {
+            return null;
+        }
+        try {
+            List<DexData> result = new ArrayList<>();
+            List<RandomAccessFile> rafs = openInputFiles(file.getAbsolutePath());
+            for (RandomAccessFile raf : rafs) {
+                DexData dexData = new DexData(raf);
+                result.add(dexData);
+                raf.close();
+            }
+            return result;
+        } catch (Exception e) {
+        }
+        return null;
+    }
+
+    /**
+     * Opens an input file, which could be a .dex or a .jar/.apk with a
+     * classes.dex inside.  If the latter, we extract the contents to a
+     * temporary file.
+     *
+     * @param fileName the name of the file to open
+     */
+    private static List<RandomAccessFile> openInputFiles(String fileName) throws IOException {
+        List<RandomAccessFile> rafs = openInputFileAsZip(fileName);
+
+        if (rafs == null) {
+            File inputFile = new File(fileName);
+            RandomAccessFile raf = new RandomAccessFile(inputFile, "r");
+            rafs = Collections.singletonList(raf);
+        }
+
+        return rafs;
+    }
+
+    /**
+     * Tries to open an input file as a Zip archive (jar/apk) with dex files inside.
+     *
+     * @param fileName the name of the file to open
+     * @return a list of RandomAccessFile for classes.dex,
+     * classes2.dex, etc., or null if the input file is not a
+     * zip archive
+     * @throws IOException if the file isn't found, or it's a zip and
+     *                     no classes.dex isn't found inside
+     */
+    private static List<RandomAccessFile> openInputFileAsZip(String fileName) throws IOException {
+        /*
+         * Try it as a zip file.
+         */
+        ZipFile zipFile;
+        try {
+            zipFile = new ZipFile(fileName);
+        } catch (FileNotFoundException fnfe) {
+            /* not found, no point in retrying as non-zip */
+            System.err.println("Unable to open '" + fileName + "': " +
+                    fnfe.getMessage());
+            throw fnfe;
+        } catch (ZipException ze) {
+            /* not a zip */
+            return null;
+        }
+
+        List<RandomAccessFile> result = new ArrayList<RandomAccessFile>();
+        try {
+            int classesDexNumber = 1;
+            while (true) {
+                result.add(openClassesDexZipFileEntry(zipFile, classesDexNumber));
+                classesDexNumber++;
+            }
+        } catch (IOException ioe) {
+            // We didn't find any of the expected dex files in the zip.
+            if (result.isEmpty()) {
+                throw ioe;
+            }
+            return result;
+        }
+    }
+
+    private static RandomAccessFile openClassesDexZipFileEntry(ZipFile zipFile, int classesDexNumber)
+            throws IOException {
+        /*
+         * We know it's a zip; see if there's anything useful inside.  A
+         * failure here results in some type of IOException (of which
+         * ZipException is a subclass).
+         */
+        String zipEntryName = ("classes" +
+                (classesDexNumber == 1 ? "" : classesDexNumber) +
+                ".dex");
+        ZipEntry entry = zipFile.getEntry(zipEntryName);
+        if (entry == null) {
+            zipFile.close();
+            throw new ZipException("Unable to find '" + zipEntryName +
+                    "' in '" + zipFile.getName() + "'");
+        }
+
+        InputStream zis = zipFile.getInputStream(entry);
+
+        /*
+         * Create a temp file to hold the DEX data, open it, and delete it
+         * to ensure it doesn't hang around if we fail.
+         */
+        File tempFile = File.createTempFile("dexdeps", ".dex");
+        //System.out.println("+++ using temp " + tempFile);
+        RandomAccessFile raf = new RandomAccessFile(tempFile, "rw");
+        tempFile.delete();
+
+        /*
+         * Copy all data from input stream to output file.
+         */
+        byte copyBuf[] = new byte[32768];
+        int actual;
+
+        while (true) {
+            actual = zis.read(copyBuf);
+            if (actual == -1)
+                break;
+
+            raf.write(copyBuf, 0, actual);
+        }
+
+        zis.close();
+        raf.seek(0);
+
+        return raf;
     }
 }
