@@ -85,6 +85,26 @@ public class ClassRef {
         return mInternal;
     }
 
+    /**
+     * is primitive
+     */
+    public boolean isPrimitive() {
+        if (mClassName.length() == 1) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * is array
+     */
+    public boolean isArray() {
+        if (mClassName.charAt(0) == '[') {
+            return true;
+        }
+        return false;
+    }
+
     @Override
     public String toString() {
         return Utility.descriptorToDot(getName());
