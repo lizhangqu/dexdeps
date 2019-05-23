@@ -7,14 +7,14 @@ dexdeps
 <dependency>
 	<groupId>io.github.lizhangqu</groupId>
 	<artifactId>dexdeps</artifactId>
-	<version>1.0.0</version>
+	<version>1.0.1</version>
 </dependency>
 ```
 
 ### Gradle
 
 ```
-implementation 'io.github.lizhangqu:dexdeps:1.0.0'
+implementation 'io.github.lizhangqu:dexdeps:1.0.1'
 ```
 
 ### Sample
