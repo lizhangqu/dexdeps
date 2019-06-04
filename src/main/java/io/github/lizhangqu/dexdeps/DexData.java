@@ -553,14 +553,35 @@ public class DexData {
      *
      * @throws EOFException if we run off the end of the file
      */
-    private int readUnsignedLeb128() throws IOException {
+//    private int readUnsignedLeb128() throws IOException {
+//        int result = 0;
+//        byte val;
+//
+//        do {
+//            val = readByte();
+//            result = (result << 7) | (val & 0x7f);
+//        } while (val < 0);
+//
+//        return result;
+//    }
+
+    /**
+     * Reads an unsigned integer from {@code in}.
+     */
+    public int readUnsignedLeb128() throws IOException {
         int result = 0;
-        byte val;
+        int cur;
+        int count = 0;
 
         do {
-            val = readByte();
-            result = (result << 7) | (val & 0x7f);
-        } while (val < 0);
+            cur = readByte() & 0xff;
+            result |= (cur & 0x7f) << (count * 7);
+            count++;
+        } while (((cur & 0x80) == 0x80) && count < 5);
+
+        if ((cur & 0x80) == 0x80) {
+            throw new IOException("invalid LEB128 sequence");
+        }
 
         return result;
     }
